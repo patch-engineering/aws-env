@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"log"
-	"os"
 	"strings"
 )
 
@@ -17,11 +16,8 @@ const (
 )
 
 func main() {
-	if os.Getenv("AWS_ENV_PATH") == "" {
-		log.Println("aws-env running locally, without AWS_ENV_PATH")
-		return
-	}
-
+	path := flag.String("path", "", "path to fetch parameters")
+	param := flag.String("param", "", "single parameter to fetch")
 	recursivePtr := flag.Bool("recursive", false, "recursively process parameters on path")
 	format := flag.String("format", formatExports, "output format")
 	flag.Parse()
@@ -34,12 +30,12 @@ func main() {
 	sess := CreateSession()
 	client := CreateClient(sess)
 
-	path := os.Getenv("AWS_ENV_PATH")
-	if strings.HasSuffix(path, "/*") {
-		path = strings.TrimSuffix(path, "/*")
-		ExportVariables(client, path, *recursivePtr, *format, "")
+	if *path != "" {
+		ExportVariables(client, *path, *recursivePtr, *format, "")
+	} else if *param != "" {
+		ExportSingleVariable(client, *param, *format)
 	} else {
-		ExportSingleVariable(client, path, *format)
+		log.Fatal("Either --path or --param must be provided")
 	}
 }
 
