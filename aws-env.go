@@ -7,7 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"log"
-	"os"
 	"strings"
 )
 
@@ -17,11 +16,8 @@ const (
 )
 
 func main() {
-	if os.Getenv("AWS_ENV_PATH") == "" {
-		log.Println("aws-env running locally, without AWS_ENV_PATH")
-		return
-	}
-
+	path := flag.String("path", "", "path to fetch parameters")
+	param := flag.String("param", "", "single parameter to fetch")
 	recursivePtr := flag.Bool("recursive", false, "recursively process parameters on path")
 	format := flag.String("format", formatExports, "output format")
 	flag.Parse()
@@ -34,7 +30,13 @@ func main() {
 	sess := CreateSession()
 	client := CreateClient(sess)
 
-	ExportVariables(client, os.Getenv("AWS_ENV_PATH"), *recursivePtr, *format, "")
+	if *path != "" {
+		ExportVariables(client, *path, *recursivePtr, *format, "")
+	} else if *param != "" {
+		ExportSingleVariable(client, *param, *format)
+	} else {
+		log.Fatal("Either --path or --param must be provided")
+	}
 }
 
 func CreateSession() *session.Session {
@@ -43,6 +45,21 @@ func CreateSession() *session.Session {
 
 func CreateClient(sess *session.Session) *ssm.SSM {
 	return ssm.New(sess)
+}
+
+func ExportSingleVariable(client *ssm.SSM, name string, format string) {
+	input := &ssm.GetParameterInput{
+		Name:           &name,
+		WithDecryption: aws.Bool(true),
+	}
+
+	output, err := client.GetParameter(input)
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	OutputParameter(output.Parameter, format)
 }
 
 func ExportVariables(client *ssm.SSM, path string, recursive bool, format string, nextToken string) {
@@ -63,7 +80,7 @@ func ExportVariables(client *ssm.SSM, path string, recursive bool, format string
 	}
 
 	for _, element := range output.Parameters {
-		OutputParameter(path, element, format)
+		OutputParameter(element, format)
 	}
 
 	if output.NextToken != nil {
@@ -71,11 +88,11 @@ func ExportVariables(client *ssm.SSM, path string, recursive bool, format string
 	}
 }
 
-func OutputParameter(path string, parameter *ssm.Parameter, format string) {
+func OutputParameter(parameter *ssm.Parameter, format string) {
 	name := *parameter.Name
 	value := *parameter.Value
 
-	env := strings.Replace(strings.Trim(name[len(path):], "/"), "/", "_", -1)
+	env := name[strings.LastIndex(name, "/")+1:]
 	value = strings.Replace(value, "\n", "\\n", -1)
 
 	switch format {
